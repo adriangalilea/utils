@@ -1,0 +1,8 @@
+{
+  "name": "conformance-probe-ts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@adriangalilea/utils": "^2.31.0"
+  }
+}

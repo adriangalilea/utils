@@ -1,0 +1,4 @@
+INFO  daemon starting
+WARN  [api] upstream returned 502
+ERROR [api auth] token expired
+INFO  ready
