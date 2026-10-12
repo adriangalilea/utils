@@ -198,12 +198,12 @@ conformance/run.sh
 ```
 
 ```
-go    PASS   events · scope level · traceparent
-ts    PASS   events · scope level · traceparent
-py    PASS   events · scope level · traceparent
+go     PASS   events · scope level · traceparent · ship pending
+ts     PASS   events · scope level · traceparent · ship
+py     PASS   events · scope level · traceparent · ship pending
 ```
 
-Each probe writes the same events. The harness checks every line is one JSON event with its keys in the contract's order, replaces what differs every run (times, ids, durations, stacks, error type names) with stable tokens that keep which ids are the same, and diffs the result against `conformance/expected.jsonl`. Two more runs check the level ladder (`API_AUTH_LOG_LEVEL=debug` opens one nested scope) and a trace continued from `TRACEPARENT`. See [conformance/README.md](conformance/README.md).
+Each probe writes the same events. The harness checks every line is one JSON event with its keys in the contract's order, replaces what differs every run (times, ids, durations, stacks, error type names) with stable tokens that keep which ids are the same, and diffs the result against `conformance/expected.jsonl`. Two more runs check the level ladder (`API_AUTH_LOG_LEVEL=debug` opens one nested scope) and a trace continued from `TRACEPARENT`, and a fourth points `LOG_SHIP` at a local collector and proves the shipped bytes are the stderr bytes, over the contract's wire. Go and Python do not ship yet: their ship run is reported pending. See [conformance/README.md](conformance/README.md).
 
 ## License
 

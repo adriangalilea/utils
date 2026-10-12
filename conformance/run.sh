@@ -2,13 +2,18 @@
 # Runs the same sequence of events through all three libraries and proves their
 # streams are identical: every line one JSON event in the contract's shape (keys,
 # order, formats), and, with what differs every run replaced by stable tokens
-# (normalize.py), the same stream as expected.jsonl. Three runs per library:
+# (normalize.py), the same stream as expected.jsonl. Four runs per library:
 #
 #   events       the default: the sequence, with the events below info absent
 #   scope level  API_AUTH_LOG_LEVEL=debug opens the nested scope ["api","auth"]
 #                and only it
 #   traceparent  TRACEPARENT set: every root span joins that trace, under that
 #                span
+#   ship         LOG_SHIP pointed at a collector on 127.0.0.1 (ship.py): what
+#                arrived is stderr byte for byte, over the contract's wire
+#
+# A library listed in SHIP_PENDING does not ship yet: its ship run is reported
+# pending, not run. Drop it from the list in the change that makes it ship.
 #
 # By default each library is the published one its probe pins. LOCAL=<dir>
 # runs the checkouts in <dir> instead (<dir>/go-utils, <dir>/ts-utils built,
@@ -24,6 +29,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 TRACEPARENT_VALUE=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+SHIP_PENDING=" go py "
 
 # check <lang> <run> <command...>: runs a probe, normalizes its stderr, diffs.
 check() {
@@ -31,12 +37,16 @@ check() {
 	shift 2
 	local expected env=()
 	case $run in
-	events) expected=expected.jsonl ;;
+	events | ship) expected=expected.jsonl ;;
 	scope) expected=expected-scope.jsonl env=(API_AUTH_LOG_LEVEL=debug) ;;
 	traceparent) expected=expected-traceparent.jsonl env=(TRACEPARENT=$TRACEPARENT_VALUE) ;;
 	esac
 	local raw=$work/$lang-$run.err out=$work/$lang-$run.jsonl
-	env LOG_FORMAT=json LOG_SERVICE=probe ${env[@]+"${env[@]}"} "$@" 2>"$raw" >/dev/null
+	if [ "$run" = ship ]; then
+		env LOG_FORMAT=json LOG_SERVICE=probe python3 "$here/ship.py" "$raw" "$@" || return 1
+	else
+		env LOG_FORMAT=json LOG_SERVICE=probe ${env[@]+"${env[@]}"} "$@" 2>"$raw" >/dev/null
+	fi
 	if [ ! -s "$raw" ]; then
 		echo "no output"
 		return 1
@@ -52,18 +62,23 @@ check() {
 	fi
 }
 
-# probe <lang> <command...>: the three runs, one result line.
+# probe <lang> <command...>: the four runs, one result line.
 probe() {
 	local lang=$1
 	shift
-	local failed=() run
-	for run in events scope traceparent; do
+	local failed=() run runs=(events scope traceparent) shipped="ship"
+	if [[ $SHIP_PENDING == *" $lang "* ]]; then
+		shipped="ship pending"
+	else
+		runs+=(ship)
+	fi
+	for run in "${runs[@]}"; do
 		if ! check "$lang" "$run" "$@" >"$work/$lang-$run.why" 2>&1; then
 			failed+=("$run")
 		fi
 	done
 	if [ ${#failed[@]} -eq 0 ]; then
-		printf '%-6s PASS   events · scope level · traceparent\n' "$lang"
+		printf '%-6s PASS   events · scope level · traceparent · %s\n' "$lang" "$shipped"
 		return
 	fi
 	printf '%-6s FAIL   %s\n' "$lang" "${failed[*]}"
