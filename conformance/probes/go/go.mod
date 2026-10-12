@@ -2,7 +2,7 @@ module conformance-probe-go
 
 go 1.24.5
 
-require github.com/adriangalilea/go-utils v0.7.0
+require github.com/adriangalilea/go-utils v0.9.0
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

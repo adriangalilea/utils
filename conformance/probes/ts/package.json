@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@adriangalilea/utils": "^2.31.0"
+    "@adriangalilea/utils": "^9.0.0"
   }
 }
