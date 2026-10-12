@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adriangalilea/utils/schema/page.schema.json",
+  "title": "page",
+  "description": "The fields of the spans a web page writes (README, Web pages): a `page` span's start and end, a `fetch` span's start and end. Each is the `fields` object of an event that event.schema.json already validates; a collector checks a browser's events against the definition its span's name and phase select. No key outside these is written by a page.",
+  "$defs": {
+    "path": {
+      "description": "A pathname: no query, no fragment.",
+      "type": "string",
+      "pattern": "^/[^?#]*$"
+    },
+    "host": {
+      "description": "A host, never a URL.",
+      "type": "string",
+      "pattern": "^[a-z0-9.-]+(:[0-9]+)?$"
+    },
+    "pageStart": {
+      "$ref": "#/$defs/page",
+      "unevaluatedProperties": false
+    },
+    "page": {
+      "description": "What a page span's start carries: its end carries it too.",
+      "type": "object",
+      "required": ["host", "path", "nav", "viewport"],
+      "properties": {
+        "host": { "$ref": "#/$defs/host" },
+        "path": { "$ref": "#/$defs/path" },
+        "nav": {
+          "enum": ["navigate", "reload", "back_forward", "prerender", "soft", "resumed", "bfcache"]
+        },
+        "from": { "$ref": "#/$defs/path", "description": "The previous path, on a soft navigation." },
+        "referrer": { "$ref": "#/$defs/host", "description": "The referring page's host." },
+        "source": {
+          "description": "utm_source, else ref, from the URL.",
+          "type": "string",
+          "maxLength": 100
+        },
+        "viewport": { "enum": ["phone", "tablet", "desktop"] },
+        "place": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "route": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "build": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "probe": { "const": true },
+        "staff": { "const": true }
+      }
+    },
+    "pageEnd": {
+      "description": "The start's fields with what set() added.",
+      "$ref": "#/$defs/page",
+      "unevaluatedProperties": false,
+      "properties": {
+        "seen_ms": { "type": "number", "minimum": 0 },
+        "reached": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "uniqueItems": true
+        },
+        "ttfb_ms": { "type": "number", "minimum": 0 },
+        "lcp_ms": { "type": "number", "minimum": 0 },
+        "inp_ms": { "type": "number", "minimum": 0 },
+        "cls": { "type": "number", "minimum": 0 }
+      },
+      "required": ["seen_ms"]
+    },
+    "fetchStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path", "kind"],
+      "properties": {
+        "method": { "type": "string", "pattern": "^[A-Z]+$" },
+        "path": { "$ref": "#/$defs/path" },
+        "kind": { "enum": ["rsc", "action", "api", "other"] }
+      }
+    },
+    "fetchEnd": {
+      "description": "The start's fields with the answer's status, or the error a request that got none failed with.",
+      "type": "object",
+      "required": ["method", "path", "kind"],
+      "properties": {
+        "method": { "type": "string", "pattern": "^[A-Z]+$" },
+        "path": { "$ref": "#/$defs/path" },
+        "kind": { "enum": ["rsc", "action", "api", "other"] },
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "err": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

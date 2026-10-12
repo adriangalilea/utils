@@ -183,6 +183,31 @@ An event is written to stderr. With `LOG_SHIP` set it is also sent to that URL, 
 
 **Shipping is never in the way.** A writer never blocks a write on it and never throws from it: a refused or lost batch is one `warnOnce`, scope `ship`, which ships with the next batch like any event. A malformed `LOG_SHIP` is a configuration error and raises, as every variable does.
 
+A browser writes no `Authorization`, so a collector tells a page's batch by its `Origin` and its events' `service`, and answers it with `Access-Control-Allow-Origin` (a `fetch` that cannot read its answer reads as lost). A batch leaving a hidden page goes through `sendBeacon`, the one request a browser finishes after the page is gone.
+
+### Web pages
+
+How a page in a browser writes the stream, so any collector and any viewer read every site the same way. ts-utils writes it (`@adriangalilea/utils/log/web`); the fields are [`schema/page.schema.json`](schema/page.schema.json).
+
+**A page shown is a span named `page`, and the root of its own trace.** Nothing is above it. A visit (one person's pages close together) is not in the stream: only the collector sees the caller, so it composes visits from pages, and a page learns nothing it would have to ask for first.
+
+| in the browser | in the stream |
+|---|---|
+| a page shown: the first paint of a load, or a prerendered page activated | a `page` span starts, a new `trace_id` |
+| a client-side route change | the `page` span ends; a new one starts, `nav: "soft"`, `from` the previous path |
+| the tab hidden | the `page` span ends (hidden is the last moment a page reliably sends anything) |
+| the tab shown again | a new `page` span, `nav: "resumed"`, same path |
+| restored from the back/forward cache | a new `page` span, `nav: "bfcache"` |
+| prerendered, never shown | nothing |
+| a same-origin request | a `fetch` span, child of the page; its `traceparent()` goes on the request's `traceparent` header (never a cross-origin one: a header of ours would cost it a preflight) |
+| the server handling it | `log.join(header)`: its spans are children of the `fetch` span, in the page's trace |
+| a named event | a line through the page span: `page.info("main action", { label })` |
+| an uncaught error, an unhandled rejection | an `error` line through the page span, `err` in its fields |
+
+A `page` span's start carries `host`, `path` (the pathname, no query), `nav` (`navigate`, `reload`, `back_forward`, `prerender`, `soft`, `resumed`, `bfcache`), `from` on a soft navigation, `referrer` (the referring page's host, never its URL), `source` (`utm_source`, else `ref`, when the URL has one), `viewport` (`phone` under 640 px, `tablet` under 1024, else `desktop`), and what the site knows that a collector cannot: `place` (what a visitor would call where they are: a project, the studio), `route` (the route's pattern, `requests/:n`) and `build` (the deploy that served it, a git sha). `probe: true` when an automated browser drives it (`navigator.webdriver`), `staff: true` when the site says its owner is reading. Its end adds, through `set`, `seen_ms` (time visible), `reached` (the `data-section` names that came on screen, in the order first seen) and, on the first page of a load only, the load's vitals `ttfb_ms`, `lcp_ms`, `inp_ms`, `cls`. A `fetch` span carries `method`, `path` (pathname, no query) and `kind` (`rsc`, `action`, `api`, `other`); its end adds `status`, and it ends failed on a network error or a status of 400 or more.
+
+**What a page never writes:** a query string, a full URL (its own or a referrer's), an IP, a user agent, a cookie, or anything that names a person (`email`, `user`, `name`, `phone`: a server span that needs to say so says `signed_in: true`). Nothing is stored in the browser to recognise it later. **A browser that asks not to be tracked** (`navigator.globalPrivacyControl`, or Do Not Track) gets no `page` span and sends nothing at all.
+
 ### Configuration
 
 Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`), `LOG_SERVICE` (`setLogService`), `LOG_SHIP` (`setLogShip`), `LOG_SHIP_TOKEN` (`setLogShipToken`). For every one of them **the environment wins over code**: a setter is the program's own default, and the operator's variable, read live, overrides it. Values are matched without regard to case (`LOG_LEVEL=DEBUG` is `debug`), an empty variable is unset, and an unknown value raises or panics. A confused program should scream.
