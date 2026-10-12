@@ -1,67 +1,107 @@
 #!/usr/bin/env bash
-# Runs the same event sequence through all three libraries and proves their
-# record output is identical. Every probe emits the same six events; the two
-# below the default level must not appear, which checks the ladder at the same
-# time as the line format.
+# Runs the same sequence of events through all three libraries and proves their
+# streams are identical: every line one JSON event in the contract's shape (keys,
+# order, formats), and, with what differs every run replaced by stable tokens
+# (normalize.py), the same stream as expected.jsonl. Three runs per library:
 #
-# A missing toolchain is a SKIP, not a failure: someone with only Node should
-# still be able to check the TypeScript half.
+#   events       the default: the sequence, with the events below info absent
+#   scope level  API_AUTH_LOG_LEVEL=debug opens the nested scope ["api","auth"]
+#                and only it
+#   traceparent  TRACEPARENT set: every root span joins that trace, under that
+#                span
+#
+# By default each library is the published one its probe pins. LOCAL=<dir>
+# runs the checkouts in <dir> instead (<dir>/go-utils, <dir>/ts-utils built,
+# <dir>/py-utils), which is how a library is checked before it is released.
+#
+# A missing toolchain is a SKIP, not a failure.
 set -uo pipefail
 
 cd "$(dirname "$0")"
-STAMP='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z '
+here=$(pwd)
 status=0
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 
-check() { # name, output-file
-	local name=$1 out=$2
+TRACEPARENT_VALUE=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
 
-	if [ ! -s "$out" ]; then
-		printf '%-6s FAIL   no output\n' "$name"
-		status=1
-		return
+# check <lang> <run> <command...>: runs a probe, normalizes its stderr, diffs.
+check() {
+	local lang=$1 run=$2
+	shift 2
+	local expected env=()
+	case $run in
+	events) expected=expected.jsonl ;;
+	scope) expected=expected-scope.jsonl env=(API_AUTH_LOG_LEVEL=debug) ;;
+	traceparent) expected=expected-traceparent.jsonl env=(TRACEPARENT=$TRACEPARENT_VALUE) ;;
+	esac
+	local raw=$work/$lang-$run.err out=$work/$lang-$run.jsonl
+	env LOG_FORMAT=json LOG_SERVICE=probe ${env[@]+"${env[@]}"} "$@" 2>"$raw" >/dev/null
+	if [ ! -s "$raw" ]; then
+		echo "no output"
+		return 1
 	fi
-
-	# Every line must carry a well-formed UTC stamp before we strip them.
-	local unstamped
-	unstamped=$(grep -cvE "$STAMP" "$out")
-	if [ "$unstamped" -ne 0 ]; then
-		printf '%-6s FAIL   %s line(s) without a UTC stamp\n' "$name" "$unstamped"
-		grep -vE "$STAMP" "$out" | sed 's/^/         /'
-		status=1
-		return
+	if ! TRACE_ID=0af7651916cd43dd8448eb211c80319c PARENT_ID=b7ad6b7169203331 \
+		python3 "$here/normalize.py" <"$raw" >"$out" 2>"$work/why"; then
+		cat "$work/why"
+		return 1
 	fi
-
-	if diff -q <(sed -E "s/$STAMP//" "$out") expected.txt >/dev/null; then
-		printf '%-6s PASS\n' "$name"
-	else
-		printf '%-6s FAIL   record output differs from expected.txt\n' "$name"
-		diff <(sed -E "s/$STAMP//" "$out") expected.txt | sed 's/^/         /'
-		status=1
+	if ! diff -u "$expected" "$out" >"$work/diff"; then
+		sed 's/^/    /' "$work/diff"
+		return 1
 	fi
 }
 
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-export LOG_FORMAT=record LOG_TIME=1
+# probe <lang> <command...>: the three runs, one result line.
+probe() {
+	local lang=$1
+	shift
+	local failed=() run
+	for run in events scope traceparent; do
+		if ! check "$lang" "$run" "$@" >"$work/$lang-$run.why" 2>&1; then
+			failed+=("$run")
+		fi
+	done
+	if [ ${#failed[@]} -eq 0 ]; then
+		printf '%-6s PASS   events · scope level · traceparent\n' "$lang"
+		return
+	fi
+	printf '%-6s FAIL   %s\n' "$lang" "${failed[*]}"
+	for run in "${failed[@]}"; do
+		echo "  $run:"
+		sed 's/^/    /' "$work/$lang-$run.why"
+	done
+	status=1
+}
 
 if command -v go >/dev/null; then
-	(cd probes/go && go run . 2>"$work/go.out" >/dev/null)
-	check go "$work/go.out"
+	src=probes/go
+	if [ -n "${LOCAL:-}" ]; then
+		cp -R probes/go "$work/go-probe"
+		(cd "$work/go-probe" && go mod edit -replace "github.com/adriangalilea/go-utils=$LOCAL/go-utils" && go mod tidy >/dev/null 2>&1)
+		src=$work/go-probe
+	fi
+	(cd "$src" && go build -o "$work/go-probe-bin" .) && probe go "$work/go-probe-bin"
 else
 	printf '%-6s SKIP   go not installed\n' go
 fi
 
 if command -v node >/dev/null && command -v npm >/dev/null; then
-	[ -d probes/ts/node_modules ] || (cd probes/ts && npm install --silent --no-audit --no-fund >/dev/null 2>&1)
-	(cd probes/ts && node probe.mjs 2>"$work/ts.out" >/dev/null)
-	check ts "$work/ts.out"
+	cp -R probes/ts "$work/ts-probe"
+	if [ -n "${LOCAL:-}" ]; then
+		(cd "$work/ts-probe" && npm install --silent --no-audit --no-fund "$LOCAL/ts-utils" >/dev/null 2>&1)
+	else
+		(cd "$work/ts-probe" && npm install --silent --no-audit --no-fund >/dev/null 2>&1)
+	fi
+	probe ts node "$work/ts-probe/probe.mjs"
 else
 	printf '%-6s SKIP   node not installed\n' ts
 fi
 
 if command -v uv >/dev/null; then
-	(cd probes/py && uv run --quiet --with adrian-utils python probe.py 2>"$work/py.out" >/dev/null)
-	check py "$work/py.out"
+	with=adrian-utils
+	[ -n "${LOCAL:-}" ] && with=$LOCAL/py-utils
+	probe py uv run --quiet --no-project --with "$with" python probes/py/probe.py
 else
 	printf '%-6s SKIP   uv not installed\n' py
 fi

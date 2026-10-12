@@ -1,0 +1,12 @@
+{"time":"T","level":"info","verb":"info","msg":"daemon starting","service":"probe"}
+{"time":"T","level":"warn","verb":"warn","msg":"upstream returned 502","service":"probe","scope":["api"],"fields":{"retry":true,"status":502}}
+{"time":"T","level":"error","verb":"error","msg":"token expired","service":"probe","scope":["api","auth"],"fields":{"err":{"type":"E","message":"expired"}}}
+{"time":"T","level":"info","verb":"wait","msg":"sync","service":"probe","phase":"start","trace_id":"trace#1","span_id":"span#1","fields":{"repo":"ui"}}
+{"time":"T","level":"info","verb":"info","msg":"cloned","service":"probe","trace_id":"trace#1","span_id":"span#1","fields":{"files":3}}
+{"time":"T","level":"info","verb":"wait","msg":"build","service":"probe","phase":"start","trace_id":"trace#1","span_id":"span#2","parent_id":"span#1"}
+{"time":"T","level":"warn","verb":"warn","msg":"slow step","service":"probe","trace_id":"trace#1","span_id":"span#2","fields":{"ms":1200}}
+{"time":"T","level":"info","verb":"success","msg":"build","service":"probe","phase":"end","trace_id":"trace#1","span_id":"span#2","parent_id":"span#1","status":"ok","dur_ms":"D"}
+{"time":"T","level":"info","verb":"success","msg":"sync","service":"probe","phase":"end","trace_id":"trace#1","span_id":"span#1","status":"ok","dur_ms":"D","fields":{"pushed":true,"repo":"ui"}}
+{"time":"T","level":"info","verb":"wait","msg":"deploy","service":"probe","phase":"start","trace_id":"trace#2","span_id":"span#3"}
+{"time":"T","level":"error","verb":"fail","msg":"deploy","service":"probe","phase":"end","trace_id":"trace#2","span_id":"span#3","status":"error","dur_ms":"D","fields":{"err":{"type":"E","message":"boom"}}}
+{"time":"T","level":"info","verb":"success","msg":"ready","service":"probe","fields":{"nested":{"a":1,"b":[true,null]},"took":1.5}}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adriangalilea/utils/schema/event.schema.json",
+  "title": "event",
+  "description": "One event of the stream go-utils, ts-utils and py-utils write when not talking to a terminal: a log line, or a span's start or end. One JSON object per line; keys in the order listed here, present only with a value. The prose contract is the README.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["time", "level", "verb", "msg", "service"],
+  "properties": {
+    "time": {
+      "description": "The instant, UTC, RFC3339 with milliseconds.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "level": { "enum": ["error", "warn", "info", "debug", "trace"] },
+    "verb": {
+      "enum": ["error", "fail", "warn", "info", "success", "wait", "ready", "step", "debug", "trace"]
+    },
+    "msg": { "description": "The message; for a span's own events, the span's name.", "type": "string" },
+    "service": { "description": "The program: LOG_SERVICE, else its executable's name.", "type": "string", "minLength": 1 },
+    "scope": {
+      "description": "The scope path, outermost first.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "phase": { "description": "A span's own events.", "enum": ["start", "end"] },
+    "trace_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "span_id": {
+      "description": "The span the event belongs to; a span's own events: that span.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "parent_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "status": { "enum": ["ok", "error"] },
+    "dur_ms": { "type": "number", "minimum": 0 },
+    "fields": {
+      "description": "Keys at every depth in lexicographic order, an error's own keys excepted.",
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["phase"] },
+      "then": { "required": ["trace_id", "span_id"] }
+    },
+    {
+      "if": { "properties": { "phase": { "const": "start" } }, "required": ["phase"] },
+      "then": {
+        "properties": { "verb": { "const": "wait" }, "level": { "const": "info" } },
+        "not": { "anyOf": [{ "required": ["status"] }, { "required": ["dur_ms"] }] }
+      }
+    },
+    {
+      "if": { "properties": { "phase": { "const": "end" } }, "required": ["phase"] },
+      "then": { "required": ["status", "dur_ms"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "error" } }, "required": ["status"] },
+      "then": { "properties": { "verb": { "const": "fail" }, "level": { "const": "error" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "ok" } }, "required": ["status"] },
+      "then": { "properties": { "verb": { "const": "success" }, "level": { "const": "info" } } }
+    },
+    {
+      "if": { "required": ["span_id"] },
+      "then": { "required": ["trace_id"] }
+    },
+    {
+      "if": { "required": ["parent_id"] },
+      "then": { "required": ["phase"] }
+    }
+  ],
+  "$defs": {
+    "error": {
+      "description": "An error as a field value: these keys in this order, the optional ones only when present.",
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "stack": { "type": "string" },
+        "cause": { "$ref": "#/$defs/error" },
+        "source": { "type": "string" },
+        "operation": { "type": "string" },
+        "status": { "type": ["integer", "string"] },
+        "context": { "type": "object" }
+      }
+    }
+  }
+}
