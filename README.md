@@ -138,7 +138,7 @@ A number is written as JavaScript writes it (ECMAScript's Number-to-String, whic
 
 `LOG_TIME=1|0` puts a dim local `HH:MM:SS` before human lines (default off). JSON always carries `time`.
 
-The human rendering's layout and colour are each library's business; its symbols are the table above.
+The human rendering's layout and colour are each library's business; its symbols are the table above. One rule it keeps everywhere: an error's stack is printed once. A span that fails with an error a span inside it already failed with (the same error, passed up) prints its message, not its stack again. JSON writes both: they are two facts.
 
 **Reading a file is the viewer's job.** `logs` (go-utils, `go install github.com/adriangalilea/go-utils/cmd/logs@latest`) reads events from files or stdin and renders them: human at a terminal, and in a pipe the grep line
 
@@ -158,7 +158,7 @@ scope ["api", "auth"]   →   API_AUTH_LOG_LEVEL, then API_LOG_LEVEL, then LOG_L
 
 A scope path is upper-cased, non-alphanumerics become `_`, and segments join with `_`. The environment wins over code: `setLogLevel` (`SetLogLevel`, `set_log_level`) is the program's own default, and the operator's variable overrides it.
 
-Whether a span is shown is decided once, when it begins, by its start event's level against its scope's threshold at that moment; its end follows that decision, so a viewer never meets an end without its start or a start whose end was filtered later. When a span is not shown, what it holds belongs to its nearest span that is: its lines carry that span's id, its child spans name it as parent, and its `traceparent()` names it, so a viewer never meets a parent that is not there. A remote span joined through `traceparent` counts as a shown ancestor: it is shown in its own process's stream, which a viewer merges with this one. A span with no shown ancestor hands on its own id, and the lines written in it carry no ids at all, as lines outside any span do: an id names a span a viewer can find.
+Whether a span is shown is decided once, when it begins, by its start event's level against its scope's threshold at that moment; its end follows that decision, so a viewer never meets an end without its start or a start whose end was filtered later. **A failure is never lost to that:** a hidden span that fails writes one line, verb `fail` at level error, its message the span's name and its fields the span's with `err` and `dur_ms`, as a line of its nearest shown span (no `phase`, so nothing waits to be paired with it). When a span is not shown, what it holds belongs to its nearest span that is: its lines carry that span's id, its child spans name it as parent, and its `traceparent()` names it, so a viewer never meets a parent that is not there. A remote span joined through `traceparent` counts as a shown ancestor: it is shown in its own process's stream, which a viewer merges with this one. A span with no shown ancestor hands on its own id, and the lines written in it carry no ids at all, as lines outside any span do: an id names a span a viewer can find.
 
 ### Service
 
