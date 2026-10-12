@@ -223,7 +223,7 @@ The `page` span's fields, at its start: `host`, `path` (query dropped, except an
 <PageSensor service="garden-web" collector="https://events.untitled.garden" place={place} />
 ```
 
-`PageSensor` (ui `page-sensor`) opens and ends `page` spans on the moments in the table above, using `usePathname` for soft navigations and the existing `whenShown` rule for prerendered pages. Underneath it is framework-free code in ts-utils (`@adriangalilea/utils/log/web`): the lifecycle, web vitals (from the `web-vitals` library, which already ends its measures on hidden), error capture, the same-origin `fetch` wrapper, and shipping.
+`PageSensor` (ui `page-sensor`) opens and ends `page` spans on the moments in the table above, using `usePathname` for soft navigations and the existing `whenShown` rule for prerendered pages. The whole browser side lives in that one ui item: the lifecycle, web vitals (from the `web-vitals` library), error capture, the same-origin `fetch` wrapper. ts-utils stays the producer underneath (the logger and shipping), with no browser code of its own: everything that runs in a page is ui's, and every site that mounts the sensor is a Next site that installs ui anyway.
 
 The fetch wrapper is the one implicit piece, and it is the browser's form of a rule the contract already has: a process started with `TRACEPARENT` joins it with no code. It touches only same-origin requests (a custom header on a cross-origin request would add a CORS preflight), never overwrites a `traceparent` the caller set, and parents to the page span that is current, which is a fact the sensor holds, not an ambient context.
 
@@ -296,7 +296,7 @@ garden admin · visits CLI ◀── read API ──────┘
 
 **ts-utils**
 - `log`: the `LOG_SHIP` sink in Node, Bun, Workers and browsers (batching, the flush triggers, `flush()`), behind the existing threshold. Today `emit` writes only to the console.
-- `log/web`: the page lifecycle, vitals, errors, the same-origin fetch wrapper, probe detection.
+- `log`: a batch sent from a hidden page goes through `sendBeacon`.
 - `log/next`: `traced` and `tracedAction`.
 
 **go-utils, py-utils**
@@ -337,7 +337,7 @@ Smallest useful first. Each ends with something Adrian looks at.
    - The collector in `adriangalilea/visits`, on ts-utils 9.4, live at `events.untitled.garden` and `events.adriangalilea.com`: ingest with per-site tokens, D1 `event` with 30-day retention, `GET /events`, `/tail`, `/health`, `visits tail | logs`, proved end to end from a local process in each language.
    - `logs` renders a live pipe line by line (go-utils, it buffered stdin until EOF).
    - Moved to phase 2: `log/next` (`traced`, `tracedAction`) and garden's server adopting them, because they are sequenced with the session rebuilding garden's admin, which phase 2 waits for too.
-2. **Pages in the browser.** `log/next` (`traced`, `tracedAction`); garden's server adopts `log` and `traced` with `LOG_SHIP` set on Vercel, so its server spans are kept for 30 days instead of 1 hour. `log/web` and `page-sensor`; garden mounts it; `page` and `visit` rows; the visit list and one visit as a trace (with folded idle time) in garden's admin. Garden's old sensor keeps running for two weeks so the two counts can be compared once, then it is deleted. *Adrian opens his own visit (flagged staff) and sees each page, each request, and what the server did inside it.*
+2. **Pages in the browser.** `log/next` (`traced`, `tracedAction`); garden's server adopts `log` and `traced` with `LOG_SHIP` set on Vercel, so its server spans are kept for 30 days instead of 1 hour. ui's `page-sensor` (the whole browser side); garden mounts it; `page` and `visit` rows; the visit list and one visit as a trace (with folded idle time) in garden's admin. Garden's old sensor keeps running for two weeks so the two counts can be compared once, then it is deleted. *Adrian opens his own visit (flagged staff) and sees each page, each request, and what the server did inside it.*
 3. **Product views on the collector.** Paths, around, funnels, entry and exit, `compare --build` with its verdict, `pages --slow`, `errors`, in the read API and the CLI; ui's `paths` and `flow` items and funnel bars; garden's discovery reads the collector; sections and `main action` wired; `buildJourneys` deleted. *Adrian sees each project's funnel to its main action, and whether the last deploy moved it or is still noise.*
 4. **Spread.** ui.adriangalilea.com and adriangalilea.com mount `page-sensor`; optionally xtldr's Workers feed the same store through a Tail Worker (no code in the bot), giving its events more than Workers Logs' 7 days and one `visits`/`logs` surface for everything. *Adrian sees the registry's own visitors as paths (which component pages lead to an install copy) beside the studio's.*
 

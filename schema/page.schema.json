@@ -48,7 +48,6 @@
       "$ref": "#/$defs/page",
       "unevaluatedProperties": false,
       "properties": {
-        "seen_ms": { "type": "number", "minimum": 0 },
         "reached": {
           "type": "array",
           "items": { "type": "string", "minLength": 1, "maxLength": 100 },
@@ -58,8 +57,7 @@
         "lcp_ms": { "type": "number", "minimum": 0 },
         "inp_ms": { "type": "number", "minimum": 0 },
         "cls": { "type": "number", "minimum": 0 }
-      },
-      "required": ["seen_ms"]
+      }
     },
     "fetchStart": {
       "type": "object",
@@ -80,6 +78,7 @@
         "path": { "$ref": "#/$defs/path" },
         "kind": { "enum": ["rsc", "action", "api", "other"] },
         "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "aborted": { "const": true },
         "err": { "type": "object" }
       },
       "additionalProperties": false
