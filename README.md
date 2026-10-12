@@ -164,9 +164,28 @@ Whether a span is shown is decided once, when it begins, by its start event's le
 
 `LOG_SERVICE` names the program in every event. Unset, it is the name of the executable or script without its extension. Where there is none (a Worker), it must be set, and the first JSON event says so by failing.
 
+### Shipping
+
+An event is written to stderr. With `LOG_SHIP` set it is also sent to that URL, as the same bytes: shipping changes no event and no key, so whatever reads a file reads what arrives.
+
+| variable | setter | value |
+|---|---|---|
+| `LOG_SHIP` | `setLogShip` (`SetLogShip`, `set_log_ship`) | an http(s) URL. Every event that passes its threshold is also POSTed there |
+| `LOG_SHIP_TOKEN` | `setLogShipToken` (`SetLogShipToken`, `set_log_ship_token`) | a bearer sent with each batch as `Authorization: Bearer <token>` (servers); a browser sends none, since anything in a page is public |
+
+**The batch** is the exact JSON lines the stream writes (the `json` rendering, whatever `LOG_FORMAT` shows on stderr), in the order written, joined by `\n` with no trailing newline: the body of a `POST` with `Content-Type: text/plain;charset=utf-8`, the one type `navigator.sendBeacon` and a cross-origin `fetch` send without a preflight. At most 64 KB of UTF-8 (the beacon's limit) and 50 events. An event alone over 64 KB is not shipped: it stays on stderr and the writer warns once.
+
+**A writer sends a batch** 2 seconds after its first event; at 50 events; when a span opened outside any span of this process ends (a root span, or one joined from a remote parent), so a request's whole trace leaves together; before the process exits on its own, where the runtime lets a library hook that (Node and Bun `beforeExit`, Python `atexit`); and in a browser immediately on `visibilitychange: hidden` and on `pagehide`, through `sendBeacon`. Where nothing can be hooked (Go, a Worker, a serverless function frozen after its response, an explicit exit), the program calls `flushLog` (`FlushLog`, `flush_log`): it sends what waits and returns once no batch is in flight. Several batches can be in flight, so they may arrive in any order; each holds its lines in the order written.
+
+**The answer** is `204` when every line was stored, or `400` with `{"accepted":n,"rejected":[{"line":i,"why":"…"}]}` when some were refused (`line` counts from 1 within the batch; the accepted lines are stored). `401` is a missing or unknown bearer, `413` a body over 64 KB, `415` another content type. A writer reads any answer but `204` as a refused batch.
+
+**Delivery** is at most once from a browser, and at least once from a server that retries. A collector drops a span event it already stored (the same `span_id` and `phase`), so a retried batch never doubles a span; lines have no identity of their own and may repeat.
+
+**Shipping is never in the way.** A writer never blocks a write on it and never throws from it: a refused or lost batch is one `warnOnce`, scope `ship`, which ships with the next batch like any event. A malformed `LOG_SHIP` is a configuration error and raises, as every variable does.
+
 ### Configuration
 
-Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`), `LOG_SERVICE` (`setLogService`). For every one of them **the environment wins over code**: a setter is the program's own default, and the operator's variable, read live, overrides it. Values are matched without regard to case (`LOG_LEVEL=DEBUG` is `debug`), an empty variable is unset, and an unknown value raises or panics. A confused program should scream.
+Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`), `LOG_SERVICE` (`setLogService`), `LOG_SHIP` (`setLogShip`), `LOG_SHIP_TOKEN` (`setLogShipToken`). For every one of them **the environment wins over code**: a setter is the program's own default, and the operator's variable, read live, overrides it. Values are matched without regard to case (`LOG_LEVEL=DEBUG` is `debug`), an empty variable is unset, and an unknown value raises or panics. A confused program should scream.
 
 A malformed `traceparent` handed to `join` is warned about once per distinct value (bounded memory, as `warnOnce`); lines written through a joined logger outside any span carry no ids, as a process's lines outside its spans never do.
 
