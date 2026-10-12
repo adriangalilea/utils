@@ -114,9 +114,11 @@ else
 fi
 
 if command -v uv >/dev/null; then
-	with=adrian-utils
-	[ -n "${LOCAL:-}" ] && with=$LOCAL/py-utils
-	probe py uv run --quiet --no-project --with "$with" python probes/py/probe.py
+	with=(--with adrian-utils)
+	# Editable: uv keys a built path dependency on its pyproject.toml, so a
+	# plain --with would keep running the build from before a source edit.
+	[ -n "${LOCAL:-}" ] && with=(--with-editable "$LOCAL/py-utils")
+	probe py uv run --quiet --no-project "${with[@]}" python probes/py/probe.py
 else
 	printf '%-6s SKIP   uv not installed\n' py
 fi
