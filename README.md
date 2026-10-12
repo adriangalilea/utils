@@ -122,9 +122,12 @@ Keys appear in this order, and only when they have a value:
 | big integers, decimals | a string |
 | arrays, maps, objects | JSON, recursively (Go: `encoding/json`; Python: dataclasses as dicts) |
 | a reference back to an enclosing value | the string `"[circular]"` |
+| a value with a JSON form of its own (`toJSON`, `MarshalJSON`, a dataclass) | that form |
+| sets | arrays; maps with non-string keys, objects keyed by each key's string form |
+| an absent value (JavaScript's `undefined`) | left out of an object, `null` in an array, as JSON does |
 | anything else | the language's string form of it |
 
-A number is written as JavaScript writes it (ECMAScript's Number-to-String, which Go's `encoding/json` also follows): `2.0` is `2`, `1e-7` is `1e-7`, `-0` is `0`. An error's `message` is the message it was given, without any prefix its own string form adds (a `SourcedError`'s source and operation are keys of their own); `status` and `context` appear only with a value.
+A number is written as JavaScript writes it (ECMAScript's Number-to-String, which Go's `encoding/json` also follows): `2.0` is `2`, `1e-7` is `1e-7`, `-0` is `0`. An error's `message` is the message it was given, without any prefix its own string form adds (a `SourcedError`'s source and operation are keys of their own); `status` and `context` appear only with a value (an empty context is none). A `cause` that is no error is written as one, `{"type", "message"}` from its type and string form, so a cause always has the error's shape. Ending a span with no error (TypeScript's `end()`, `end(undefined)` or `end(null)`; Go's `End(nil)` or a pointer to nil; Python's `end()`) is ok; a block that throws anything at all, `null` included, ends it failed.
 
 ### Rendering
 
