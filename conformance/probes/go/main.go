@@ -7,6 +7,8 @@ import (
 )
 
 func main() {
+	// Go has no hook before a process exits: what waits to ship leaves here.
+	defer FlushLog()
 	Log.Info("daemon starting")
 	api := Log.Scope("api")
 	api.Warn("upstream returned 502", F{"status": 502, "retry": true})

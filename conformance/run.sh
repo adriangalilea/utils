@@ -12,9 +12,6 @@
 #   ship         LOG_SHIP pointed at a collector on 127.0.0.1 (ship.py): what
 #                arrived is stderr byte for byte, over the contract's wire
 #
-# A library listed in SHIP_PENDING does not ship yet: its ship run is reported
-# pending, not run. Drop it from the list in the change that makes it ship.
-#
 # By default each library is the published one its probe pins. LOCAL=<dir>
 # runs the checkouts in <dir> instead (<dir>/go-utils, <dir>/ts-utils built,
 # <dir>/py-utils), which is how a library is checked before it is released.
@@ -29,7 +26,6 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 TRACEPARENT_VALUE=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
-SHIP_PENDING=" go py "
 
 # check <lang> <run> <command...>: runs a probe, normalizes its stderr, diffs.
 check() {
@@ -66,19 +62,14 @@ check() {
 probe() {
 	local lang=$1
 	shift
-	local failed=() run runs=(events scope traceparent) shipped="ship"
-	if [[ $SHIP_PENDING == *" $lang "* ]]; then
-		shipped="ship pending"
-	else
-		runs+=(ship)
-	fi
-	for run in "${runs[@]}"; do
+	local failed=() run
+	for run in events scope traceparent ship; do
 		if ! check "$lang" "$run" "$@" >"$work/$lang-$run.why" 2>&1; then
 			failed+=("$run")
 		fi
 	done
 	if [ ${#failed[@]} -eq 0 ]; then
-		printf '%-6s PASS   events · scope level · traceparent · %s\n' "$lang" "$shipped"
+		printf '%-6s PASS   events · scope level · traceparent · ship\n' "$lang"
 		return
 	fi
 	printf '%-6s FAIL   %s\n' "$lang" "${failed[*]}"
@@ -114,7 +105,9 @@ else
 fi
 
 if command -v uv >/dev/null; then
-	with=(--with adrian-utils)
+	# The floor is the first release that ships; the refresh makes uv ask
+	# PyPI again instead of reusing what it resolved last time.
+	with=(--refresh-package adrian-utils --with "adrian-utils>=0.8.1")
 	# Editable: uv keys a built path dependency on its pyproject.toml, so a
 	# plain --with would keep running the build from before a source edit.
 	[ -n "${LOCAL:-}" ] && with=(--with-editable "$LOCAL/py-utils")
