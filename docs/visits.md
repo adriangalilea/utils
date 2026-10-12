@@ -1,8 +1,8 @@
 # visits: the web as one event stream
 
-A design, not built. It makes Adrian's web properties (untitled.garden and its project subdomains, ui.adriangalilea.com, adriangalilea.com) observable from the visitor's browser through to the server, on the event stream this repo specifies. It lives here because its core is a change to that contract (shipping events, and a convention for web pages); the rest of the work lands in ts-utils, ui, garden and one new collector, each named below.
+A design, accepted; phase 1 is built (section 5). It makes Adrian's web properties (untitled.garden and its project subdomains, ui.adriangalilea.com, adriangalilea.com) observable from the visitor's browser through to the server, on the event stream this repo specifies. It lives here because its core is a change to that contract (shipping events, and a convention for web pages); the rest of the work lands in ts-utils, ui, garden and one new collector, each named below.
 
-Order of the doc: what we need to know, the views that answer it, how producers and readers work, prior art, phases, open questions. Everything is derived from the questions; a question nobody would act on was cut.
+Order of the doc: what we need to know, the views that answer it, how producers and readers work, prior art, phases, decisions. Everything is derived from the questions; a question nobody would act on was cut.
 
 ## 0. What exists today
 
@@ -49,7 +49,7 @@ Section reach replaces percent scrolled. Depth as a share of the page stops bein
 
 ### Agents
 
-A coding agent needs to decide where to iterate and then verify a change, from a shell, in JSON, without a browser. Every command below has a human rendering at a terminal and `--json` for agents (the `garden kpi` and `pnpm kpi` rule). The CLI is called `visits` here; see open questions for where it lives.
+A coding agent needs to decide where to iterate and then verify a change, from a shell, in JSON, without a browser. Every command below has a human rendering at a terminal and `--json` for agents (the `garden kpi` and `pnpm kpi` rule). The CLI is `visits`, in the collector's repo (section 6).
 
 ```sh
 visits paths --site untitled.garden --days 14 [--by place|page] [--json]
@@ -333,19 +333,36 @@ Smallest useful first. Each ends with something Adrian looks at.
 
 0. **Read what is already there, better.** Garden only, on the existing `page_view` rows: paths keyed by first four distinct places with a page count and "+n", the prefix tree, the around-a-place view, entry and exit, a "deepest visits" list. No new collection. *Adrian sees the discovery section read at a glance, the 80-step visit as one row with "80 pages".* Sequenced with the session editing garden's admin now.
 1. **Shipping and the collector.** `LOG_SHIP` in the three libraries with the conformance `ship` run; the collector's Worker, Durable Object, D1 `event` table, live WebSocket and `visits tail`; garden's server adopts `log` and `traced`. *Adrian sees `visits tail | logs` move live in a terminal while he clicks the site, and garden's server spans kept for 30 days instead of 1 hour.*
+   - **Built**: the Shipping section of the README and the conformance `ship` run; ts-utils' sink (Node, Bun, Workers through `flushLog`, browsers through `sendBeacon`), committed, not released; the collector in `adriangalilea/visits`, live at `events.untitled.garden` and `events.adriangalilea.com` (ingest with per-site tokens, D1 `event` with 30-day retention, `GET /events`, `/tail`, `/health`, `visits tail | logs`, proved end to end from a local process); `logs` renders a live pipe line by line (go-utils, it buffered stdin until EOF).
+   - **Left**: the sink in go-utils and py-utils (their `ship` run reports pending); `log/next` (`traced`, `tracedAction`) and garden's server adopting them, sequenced with the session rebuilding garden's admin; a ts-utils release so the published probe passes `ship`.
 2. **Pages in the browser.** `log/web` and `page-sensor`; garden mounts it; `page` and `visit` rows; the visit list and one visit as a trace (with folded idle time) in garden's admin. Garden's old sensor keeps running for two weeks so the two counts can be compared once, then it is deleted. *Adrian opens his own visit (flagged staff) and sees each page, each request, and what the server did inside it.*
 3. **Product views on the collector.** Paths, around, funnels, entry and exit, `compare --build` with its verdict, `pages --slow`, `errors`, in the read API and the CLI; ui's `paths` and `flow` items and funnel bars; garden's discovery reads the collector; sections and `main action` wired; `buildJourneys` deleted. *Adrian sees each project's funnel to its main action, and whether the last deploy moved it or is still noise.*
 4. **Spread.** ui.adriangalilea.com and adriangalilea.com mount `page-sensor`; optionally xtldr's Workers feed the same store through a Tail Worker (no code in the bot), giving its events more than Workers Logs' 7 days and one `visits`/`logs` surface for everything. *Adrian sees the registry's own visitors as paths (which component pages lead to an install copy) beside the studio's.*
 
-## 6. Open questions for Adrian
+## 6. Decisions
 
-1. Where does the collector live, and what is it called? A repo of its own (it serves sites outside the studio, so not `untitled/apps`), with the `visits` CLI beside it?
-2. Retention: raw events 30 days, pages and visits 180 days. Enough, or should visits keep a year for year-over-year?
-3. Staff and probe visits: recorded and flagged (proposed), or dropped as today?
-4. Coarse context: keep viewport class (from the width, no user agent)? Country from Cloudflare's edge (two letters, never with the IP)?
-5. Section reach replaces read depth. Drop depth entirely?
-6. Ending a page at hidden splits one reading into two spans when someone switches tabs and returns (`nav: "resumed"`). Acceptable, given the alternative is spans mobile browsers never end?
-7. Funnels: typed ad hoc plus one default per project (proposed), or saved definitions per project in the surface rows?
-8. Once ui.adriangalilea.com and adriangalilea.com have their own history here, do Vercel Analytics and Speed Insights go?
-9. Should xtldr's events join the same store through a Tail Worker (phase 4), or stay in Workers Logs?
-10. Live aggregates: is "today, updated as visits close" enough, or should paths and funnels move per event while watched?
+Adrian's, on the questions this section held:
+
+1. **The collector is its own private repo, `adriangalilea/visits` (`~/Developer/visits`)**: the Worker, its Durable Object, D1, the read API and the `visits` CLI. It serves every site (garden, ui, adriangalilea.com), so it lives outside any one of them.
+2. **Retention**: raw events 30 days; pages and visits 180 days.
+3. **Adrian's own visits and agents' visits are recorded and flagged, never dropped** (staff and probe), kept out of every product number. Their 7 days stand as proposed.
+4. **Country and screen-size class are kept, coarse**: two letters from Cloudflare's edge, never stored with the IP; `phone`, `tablet` or `desktop` from the width, never the user agent.
+5. **No scroll depth; "sections reached" instead.**
+
+Where the questions were left open, decided by the doc's own reasoning:
+
+6. **A page ends at hidden**, and a return is a new span with `nav: "resumed"`: a span mobile browsers never end is a lie, two spans are the truth.
+7. **Funnels are typed ad hoc, plus one default per project** (studio, its page, its main action), since every project has exactly one main action; saved definitions wait until a funnel is typed twice.
+8. **Vercel Analytics and Speed Insights go** once ui.adriangalilea.com and adriangalilea.com have run beside the collector for two weeks and the counts were compared once, the rule garden's old sensor follows: no dual path stays.
+9. **xtldr joins through a Tail Worker in phase 4**, as a site of its own in `src/sites.ts`: no code in the bot, more than Workers Logs' 7 days, and one `visits`/`logs` surface for everything.
+10. **Live aggregates update as visits close**: aggregates are history views, and a path moves only when a visit ends.
+
+Made while building phase 1, each following from the text above:
+
+- **`local` is a site**: Adrian's own processes (daemons, scripts) ship with no web origin and need a home that is not a web property's stream.
+- **The bearer names the site.** One ingest token per site (Worker secrets `TOKEN_<SITE>`, values in 1Password item "visits collector"), one read token (`READ_TOKEN`) for the read API, the CLI and the garden admin. Browser batches, which carry no bearer, are refused until phase 2 adds the `Origin` and `service` allowlist.
+- **"A span's end that has no parent" is a span opened outside any span of this process**: a root, or a request joined from its caller. The joined request is the case the trigger exists for (its whole trace leaves together), and it has a remote parent.
+- **`flushLog`, not `flush`** (`FlushLog`, `flush_log`): ts-utils' root barrel re-exports the logger, where a bare `flush` says nothing.
+- **The answer gained `401`, `413` and `415`**, `rejected[].line` counts from 1, and batches may arrive in any order (a writer can have several in flight). All in the README's Shipping section.
+- **Retention is by the collector's arrival day**, not the writer's `time`: a wrong clock in a writer can neither keep a row forever nor delete it early. Reads filter and order by arrival too; `time` stays the writer's fact in the line.
+- **ts-utils does not retry a failed batch**: one `warnOnce` is the whole failure path. The collector's `(span_id, phase)` dedup is in place for writers that will.
