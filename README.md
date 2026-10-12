@@ -70,6 +70,15 @@ with log.span("charge", amount=a) as s:
 
 A span has the verbs, `span` (a child), `set` (fields learned while it runs, carried on its end event) and `traceparent` (its W3C header value, to hand on). In TypeScript the span is the callback's argument and `log.span` returns what the callback returns; in Python it is a context manager; in Go `End(&err)` reads the error the function returns.
 
+**Work that does not fit a block opens and ends its span by hand.** A stream read across event handlers, a socket opened in one callback and closed in another, a response that outlives the function that started it: `begin` opens the span and returns it, `end` closes it, once (twice raises). The block forms above are `begin` and `end` round a block; Go's `Span` and `End` are this form already.
+
+| | TypeScript | Go | Python |
+|---|---|---|---|
+| open | `const s = log.begin("upload", { size })` | `s := Log.Span("upload", F{"size": n})` | `s = log.begin("upload", size=n)` |
+| end | `s.end()`, `s.end(err)` | `s.End(nil)`, `s.End(&err)` | `s.end()`, `s.end(err)` |
+
+A span never ended stays open: a viewer draws it running, which is the truth about it.
+
 **A trace crosses processes explicitly.** `s.traceparent()` is the W3C `traceparent` value of a span (`00-<trace_id>-<span_id>-01`). Hand it on in an HTTP `traceparent` header, or in the `TRACEPARENT` environment variable of a process you spawn. On the other side, `log.join(value)` returns a logger whose spans are children of that remote span; `join` of an absent value (no header) returns the logger unchanged, and a malformed one is ignored with one `warn`, because it is input from outside. A process started with `TRACEPARENT` set joins it for its root spans, which is how a spawned script continues its parent's trace with no code.
 
 ### The event
@@ -109,10 +118,13 @@ Keys appear in this order, and only when they have a value:
 | an error (an `Error`, a Go `error`, a Python exception) | an object with, in this order, `type` (its class or type name), `message`, then when present `stack`, `cause` (an error, the same way), and for a `SourcedError` `source`, `operation`, `status`, `context` |
 | an instant (`Date`, `time.Time`, `datetime`) | its event-time string |
 | a duration (`time.Duration`, `timedelta`) | milliseconds, a number |
-| bytes, big integers, decimals | a string |
+| bytes | base64, a string (as Go's `encoding/json` writes `[]byte`) |
+| big integers, decimals | a string |
 | arrays, maps, objects | JSON, recursively (Go: `encoding/json`; Python: dataclasses as dicts) |
 | a reference back to an enclosing value | the string `"[circular]"` |
 | anything else | the language's string form of it |
+
+A number is written as JavaScript writes it (ECMAScript's Number-to-String, which Go's `encoding/json` also follows): `2.0` is `2`, `1e-7` is `1e-7`, `-0` is `0`. An error's `message` is the message it was given, without any prefix its own string form adds (a `SourcedError`'s source and operation are keys of their own); `status` and `context` appear only with a value.
 
 ### Rendering
 
@@ -143,7 +155,7 @@ scope ["api", "auth"]   →   API_AUTH_LOG_LEVEL, then API_LOG_LEVEL, then LOG_L
 
 A scope path is upper-cased, non-alphanumerics become `_`, and segments join with `_`. The environment wins over code: `setLogLevel` (`SetLogLevel`, `set_log_level`) is the program's own default, and the operator's variable overrides it.
 
-A span's two events are at their verbs' levels and filter like any event. When a span's events are filtered out, what it holds belongs to its nearest span that is shown: its lines carry that span's id and its child spans name it as parent, so a viewer never meets a parent that is not there.
+Whether a span is shown is decided once, when it begins, by its start event's level against its scope's threshold at that moment; its end follows that decision, so a viewer never meets an end without its start or a start whose end was filtered later. When a span is not shown, what it holds belongs to its nearest span that is: its lines carry that span's id, its child spans name it as parent, and its `traceparent()` names it, so a viewer never meets a parent that is not there. A span with no shown ancestor hands on its own id.
 
 ### Service
 
@@ -151,7 +163,9 @@ A span's two events are at their verbs' levels and filter like any event. When a
 
 ### Configuration
 
-Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`, below the environment), `LOG_SERVICE` (`setLogService`). An unknown value of any of them raises or panics. A confused program should scream.
+Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`), `LOG_SERVICE` (`setLogService`). For every one of them **the environment wins over code**: a setter is the program's own default, and the operator's variable, read live, overrides it. Values are matched without regard to case (`LOG_LEVEL=DEBUG` is `debug`), an empty variable is unset, and an unknown value raises or panics. A confused program should scream.
+
+A malformed `traceparent` handed to `join` is warned about once per distinct value (bounded memory, as `warnOnce`); lines written through a joined logger outside any span carry no ids, as a process's lines outside its spans never do.
 
 ## Conformance
 
