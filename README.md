@@ -1,14 +1,15 @@
 # utils
 
-The umbrella for three sibling libraries that solve the same problems in three languages, and the place their one shared contract is written down and machine-checked.
+The umbrella for four sibling libraries that solve the same problems in four languages, and the place their one shared contract is written down and machine-checked.
 
 | | install | source |
 |---|---|---|
 | Go | `go get github.com/adriangalilea/go-utils` | [go-utils](https://github.com/adriangalilea/go-utils) |
 | TypeScript | `pnpm add @adriangalilea/utils` | [ts-utils](https://github.com/adriangalilea/ts-utils) |
 | Python | `uv add adrian-utils` | [py-utils](https://github.com/adriangalilea/py-utils) |
+| Swift | `.package(url: "https://github.com/adriangalilea/swift-utils", …)`, product `Log` | [swift-utils](https://github.com/adriangalilea/swift-utils) |
 
-**Nothing depends on this repo.** It is not a package, there is no code to install, and the libraries do not know it exists. It holds the spec, the schema and a harness that runs all three and diffs their output. Dependencies point one way, from here to them, so the contract can never become a coupling.
+**Nothing depends on this repo.** It is not a package, there is no code to install, and the libraries do not know it exists. It holds the spec, the schema and a harness that runs all four and diffs their output. Dependencies point one way, from here to them, so the contract can never become a coupling.
 
 Each library states its own doctrine in its own idiom, in its own source, and is complete on its own terms. What lives here is only what cannot live in any one of them: the agreement between them.
 
@@ -16,17 +17,17 @@ Each library states its own doctrine in its own idiom, in its own source, and is
 
 A program's telemetry is **one stream of events**. A log line is an event at an instant; a span is a piece of work with a start and an end, written as two events; every line written inside a span names it. Logs and traces are not two systems but two views of one stream, which is what lets a viewer go from a line to the span it happened in and back.
 
-Three languages write the stream the same way, byte for byte, so a Go daemon, a TypeScript worker and a Python script can be read, merged and traced together.
+Four languages write the stream the same way, byte for byte, so a Go daemon, a TypeScript worker, a Python script and a Swift app can be read, merged and traced together.
 
 ### Writing
 
 Every verb takes **a message, then optional fields**. The message says what happened, the fields say with what. No joining of pieces, no format strings, no inspecting argument types: what is written is what is stored.
 
-| | TypeScript | Go | Python |
-|---|---|---|---|
-| a line | `log.info("ready")` | `Log.Info("ready")` | `log.info("ready")` |
-| with fields | `log.warn("retrying", { attempt: 2 })` | `Log.Warn("retrying", F{"attempt": 2})` | `log.warn("retrying", attempt=2)` |
-| an error | `log.error("charge failed", { err })` | `Log.Error("charge failed", F{"err": err})` | `log.error("charge failed", err=e)` |
+| | TypeScript | Go | Python | Swift |
+|---|---|---|---|---|
+| a line | `log.info("ready")` | `Log.Info("ready")` | `log.info("ready")` | `log.info("ready")` |
+| with fields | `log.warn("retrying", { attempt: 2 })` | `Log.Warn("retrying", F{"attempt": 2})` | `log.warn("retrying", attempt=2)` | `log.warn("retrying", ["attempt": 2])` |
+| an error | `log.error("charge failed", { err })` | `Log.Error("charge failed", F{"err": err})` | `log.error("charge failed", err=e)` | `log.error("charge failed", ["err": error])` |
 
 **Verbs say what happened; each prints at a fixed level.** There is no `wait` level to filter by accident, and two verbs that mean the same thing cannot drift apart.
 
@@ -67,15 +68,22 @@ with log.span("charge", amount=a) as s:
         ...
     s.set(receipt=r)
 ```
+```swift
+try await log.span("charge", ["amount": a]) { s in
+    s.warn("retrying", ["attempt": 2])
+    try await s.span("stripe") { c in … }
+    s.set(["receipt": r])
+}
+```
 
-A span has the verbs, `span` (a child), `set` (fields learned while it runs, carried on its end event) and `traceparent` (its W3C header value, to hand on). In TypeScript the span is the callback's argument and `log.span` returns what the callback returns; in Python it is a context manager; in Go `End(&err)` reads the error the function returns.
+A span has the verbs, `span` (a child), `set` (fields learned while it runs, carried on its end event) and `traceparent` (its W3C header value, to hand on). In TypeScript the span is the callback's argument and `log.span` returns what the callback returns; in Python it is a context manager; in Go `End(&err)` reads the error the function returns; in Swift the span is the closure's argument, `span` returns what the closure returns, and an error it throws ends the span failed and is rethrown (sync and async closures alike). Swift's `traceparent` is a `Traceparent` value, its string form the header.
 
 **Work that does not fit a block opens and ends its span by hand.** A stream read across event handlers, a socket opened in one callback and closed in another, a response that outlives the function that started it: `begin` opens the span and returns it, `end` closes it, once (twice raises). The block forms above are `begin` and `end` round a block; Go's `Span` and `End` are this form already.
 
-| | TypeScript | Go | Python |
-|---|---|---|---|
-| open | `const s = log.begin("upload", { size })` | `s := Log.Span("upload", F{"size": n})` | `s = log.begin("upload", size=n)` |
-| end | `s.end()`, `s.end(err)` | `s.End(nil)`, `s.End(&err)` | `s.end()`, `s.end(err)` |
+| | TypeScript | Go | Python | Swift |
+|---|---|---|---|---|
+| open | `const s = log.begin("upload", { size })` | `s := Log.Span("upload", F{"size": n})` | `s = log.begin("upload", size=n)` | `let s = log.begin("upload", ["size": n])` |
+| end | `s.end()`, `s.end(err)` | `s.End(nil)`, `s.End(&err)` | `s.end()`, `s.end(err)` | `s.end()`, `s.end(error)` |
 
 A span never ended stays open: a viewer draws it running, which is the truth about it.
 
@@ -115,7 +123,7 @@ Keys appear in this order, and only when they have a value:
 |---|---|
 | string, finite number, boolean, null | itself |
 | NaN, ±infinity | the string `"NaN"`, `"Infinity"`, `"-Infinity"` |
-| an error (an `Error`, a Go `error`, a Python exception) | an object with, in this order, `type` (its class or type name), `message`, then when present `stack`, `cause` (an error, the same way), and for a `SourcedError` `source`, `operation`, `status`, `context` |
+| an error (an `Error`, a Go `error`, a Python exception, a Swift `Error`, whose `cause` is an `NSError`'s underlying error) | an object with, in this order, `type` (its class or type name), `message`, then when present `stack`, `cause` (an error, the same way), and for a `SourcedError` `source`, `operation`, `status`, `context` |
 | an instant (`Date`, `time.Time`, `datetime`) | its event-time string |
 | a duration (`time.Duration`, `timedelta`) | milliseconds, a number |
 | bytes | base64, a string (as Go's `encoding/json` writes `[]byte`) |
@@ -175,7 +183,7 @@ An event is written to stderr. With `LOG_SHIP` set it is also sent to that URL, 
 
 **The batch** is the exact JSON lines the stream writes (the `json` rendering, whatever `LOG_FORMAT` shows on stderr), in the order written, joined by `\n` with no trailing newline: the body of a `POST` with `Content-Type: text/plain;charset=utf-8`, the one type `navigator.sendBeacon` and a cross-origin `fetch` send without a preflight. At most 64 KB of UTF-8 (the beacon's limit) and 50 events. An event alone over 64 KB is not shipped: it stays on stderr and the writer warns once.
 
-**A writer sends a batch** 2 seconds after its first event; at 50 events; when a span opened outside any span of this process ends (a root span, or one joined from a remote parent), so a request's whole trace leaves together; before the process exits on its own, where the runtime lets a library hook that (Node and Bun `beforeExit`, Python `atexit`); and in a browser immediately on `visibilitychange: hidden` and on `pagehide`, through `sendBeacon`. Where nothing can be hooked (Go, a Worker, a serverless function frozen after its response, an explicit exit), the program calls `flushLog` (`FlushLog`, `flush_log`): it sends what waits and returns once no batch is in flight. Several batches can be in flight, so they may arrive in any order; each holds its lines in the order written.
+**A writer sends a batch** 2 seconds after its first event; at 50 events; when a span opened outside any span of this process ends (a root span, or one joined from a remote parent), so a request's whole trace leaves together; before the process exits on its own, where the runtime lets a library hook that (Node and Bun `beforeExit`, Python and Swift `atexit`); and in a browser immediately on `visibilitychange: hidden` and on `pagehide`, through `sendBeacon`. Where nothing can be hooked (Go, a Worker, a serverless function frozen after its response, an explicit exit), the program calls `flushLog` (`FlushLog`, `flush_log`): it sends what waits and returns once no batch is in flight. Several batches can be in flight, so they may arrive in any order; each holds its lines in the order written.
 
 **The answer** is `204` when every line was stored, or `400` with `{"accepted":n,"rejected":[{"line":i,"why":"…"}]}` when some were refused (`line` counts from 1 within the batch; the accepted lines are stored). `401` is a missing or unknown bearer, `413` a body over 64 KB, `415` another content type. A writer reads any answer but `204` as a refused batch.
 
@@ -216,7 +224,7 @@ A malformed `traceparent` handed to `join` is warned about once per distinct val
 
 ## Conformance
 
-The event stream is the one thing three codebases must agree on byte for byte, which makes it the one thing worth machine-checking. `conformance/` runs the same sequence of events through all three libraries and diffs them:
+The event stream is the one thing four codebases must agree on byte for byte, which makes it the one thing worth machine-checking. `conformance/` runs the same sequence of events through all four libraries and diffs them:
 
 ```sh
 conformance/run.sh
@@ -226,6 +234,7 @@ conformance/run.sh
 go     PASS   events · scope level · traceparent · ship
 ts     PASS   events · scope level · traceparent · ship
 py     PASS   events · scope level · traceparent · ship
+swift  PASS   events · scope level · traceparent · ship
 ```
 
 Each probe writes the same events. The harness checks every line is one JSON event with its keys in the contract's order, replaces what differs every run (times, ids, durations, stacks, error type names) with stable tokens that keep which ids are the same, and diffs the result against `conformance/expected.jsonl`. Two more runs check the level ladder (`API_AUTH_LOG_LEVEL=debug` opens one nested scope) and a trace continued from `TRACEPARENT`, and a fourth points `LOG_SHIP` at a local collector and proves the shipped bytes are the stderr bytes, over the contract's wire. See [conformance/README.md](conformance/README.md).

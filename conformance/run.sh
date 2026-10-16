@@ -116,4 +116,21 @@ else
 	printf '%-6s SKIP   uv not installed\n' py
 fi
 
+if command -v swift >/dev/null; then
+	# Built in a copy so .build never lands in this repo; LOCAL swaps the
+	# pinned revision for the checkout (Package.swift reads SWIFT_UTILS).
+	cp -R probes/swift "$work/swift-probe"
+	local_utils=()
+	[ -n "${LOCAL:-}" ] && local_utils=(SWIFT_UTILS="$LOCAL/swift-utils")
+	if env ${local_utils[@]+"${local_utils[@]}"} swift build -c release --package-path "$work/swift-probe" >"$work/swift-build.log" 2>&1; then
+		probe swift "$(env ${local_utils[@]+"${local_utils[@]}"} swift build -c release --package-path "$work/swift-probe" --show-bin-path)/probe"
+	else
+		printf '%-6s FAIL   build\n' swift
+		sed 's/^/    /' "$work/swift-build.log" | tail -20
+		status=1
+	fi
+else
+	printf '%-6s SKIP   swift not installed\n' swift
+fi
+
 exit $status

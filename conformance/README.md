@@ -1,6 +1,6 @@
 # Conformance
 
-Three separate codebases claim to write the same event stream. This runs them and checks.
+Four separate codebases claim to write the same event stream. This runs them and checks.
 
 ```sh
 ./run.sh                       # the published libraries the probes pin
@@ -16,7 +16,7 @@ Each probe writes the same sequence: lines with and without fields, a nested sco
 | traceparent | `TRACEPARENT=00-0af7…319c-b7ad…3331-01` | [`expected-traceparent.jsonl`](expected-traceparent.jsonl): both root spans in that trace, under that span, ids kept as themselves |
 | ship | `LOG_SHIP=http://127.0.0.1:<port>/ingest`, `LOG_SHIP_TOKEN` | [`expected.jsonl`](expected.jsonl) on stderr, and what arrived at [`ship.py`](ship.py)'s collector is that stderr byte for byte |
 
-The ship run starts a collector on 127.0.0.1, runs the probe against it and waits for the probe to exit: a writer sends what waits before its process ends, so by then everything has arrived. Every batch is checked on the wire (a `POST` to the path given, `Content-Type: text/plain;charset=utf-8`, the bearer, at most 64 KB and 50 lines, no empty line and no trailing newline), and the batches, placed back where they sit in the stream (several can be in flight, so they may arrive in any order), must be all of stderr, once. Shipping needs no code in TypeScript and Python, which send what waits as their process ends. Go has no hook there, so its probe opens with `defer FlushLog()`, as the contract asks of every Go program that ships.
+The ship run starts a collector on 127.0.0.1, runs the probe against it and waits for the probe to exit: a writer sends what waits before its process ends, so by then everything has arrived. Every batch is checked on the wire (a `POST` to the path given, `Content-Type: text/plain;charset=utf-8`, the bearer, at most 64 KB and 50 lines, no empty line and no trailing newline), and the batches, placed back where they sit in the stream (several can be in flight, so they may arrive in any order), must be all of stderr, once. Shipping needs no code in TypeScript, Python and Swift, which send what waits as their process ends. Go has no hook there, so its probe opens with `defer FlushLog()`, as the contract asks of every Go program that ships.
 
 ## What each probe needs
 
@@ -26,6 +26,7 @@ The ship run starts a collector on 127.0.0.1, runs the probe against it and wait
 | `probes/go` | `go` | `go.mod`, pinned; `LOCAL`: a `replace` to the checkout |
 | `probes/ts` | `node`, `npm` | `package.json`, pinned; `LOCAL`: the checkout, built |
 | `probes/py` | `uv`, `python3` | `uv run --with "adrian-utils>=0.8.1"`, refreshed from PyPI; `LOCAL`: the checkout, editable |
+| `probes/swift` | `swift` 6.2+ (macOS 26) | `Package.swift`, swift-utils pinned by revision, built in a copy; `LOCAL`: the checkout (`SWIFT_UTILS`) |
 
 A missing toolchain is reported `SKIP`, not a failure. The exit code is non-zero only when a library that ran disagrees with the contract.
 
