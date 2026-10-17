@@ -172,6 +172,10 @@ Whether a span is shown is decided once, when it begins, by its start event's le
 
 `LOG_SERVICE` names the program in every event. Unset, it is the name of the executable or script without its extension. Where there is none (a Worker), it must be set, and the first JSON event says so by failing.
 
+### The platform record
+
+Where the platform keeps a log of its own (Apple's unified log, for Swift), a writer also records every event there as its JSON line, by **its own threshold**: `LOG_RECORD_LEVEL` (`setLogRecordLevel`), default `info`, apart from the stream's `LOG_LEVEL`. The stream is for whoever reads the process; the record is what a trace is gathered from later, so a command quiet at its terminal (`warn`) still records its spans. A span decides where it goes when it begins (the stream, the record, both) and its end follows. A stream read at a lower verbosity than the record may meet a line naming a span only the record holds; the record is the whole trace. `LOG_OSLOG=0` turns the record off.
+
 ### Shipping
 
 An event is written to stderr. With `LOG_SHIP` set it is also sent to that URL, as the same bytes: shipping changes no event and no key, so whatever reads a file reads what arrives.
