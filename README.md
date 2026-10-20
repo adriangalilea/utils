@@ -176,6 +176,16 @@ Whether a span is shown is decided once, when it begins, by its start event's le
 
 Where the platform keeps a log of its own (Apple's unified log, for Swift), a writer also records every event there as its JSON line, by **its own threshold**: `LOG_RECORD_LEVEL` (`setLogRecordLevel`), default `info`, apart from the stream's `LOG_LEVEL`. The stream is for whoever reads the process; the record is what a trace is gathered from later, so a command quiet at its terminal (`warn`) still records its spans. A span decides where it goes when it begins (the stream, the record, both) and its end follows. A stream read at a lower verbosity than the record may meet a line naming a span only the record holds; the record is the whole trace. `LOG_OSLOG=0` turns the record off.
 
+### The record as a file
+
+A record read back often (a trace gathered on demand) is kept as a file: `LOG_RECORD_FILE` (`setLogRecordFile`) names a path, and every event the record takes (`LOG_RECORD_LEVEL`) is appended there as its JSON line, the same bytes as the stream's `json` rendering, one `write` per line. Reading a file is a scan of what was written; a platform log is a scan of everything every program wrote (Apple's: seconds for an hour, a minute for a day).
+
+- **Bounded.** When an append takes the file past 4 MiB, the writer renames it to the same path with `.1` before its extension (`authzd.jsonl` → `authzd.1.jsonl`, replacing an older one) and starts a new one: two generations, at most about 8 MiB. A reader reads `.1` then the current file.
+- **Shared.** Several processes may name one file (a command line run many times at once): each line is one append, so lines never interleave; a writer whose file was rotated by another (its descriptor no longer the path's file) reopens the path before its next line.
+- **Never in the way.** A record file that cannot be opened or written is one `warnOnce`, scope `record`, on the stream; the event still goes everywhere else. The directory is created with the file, private to the user (0700, the file 0600).
+
+The file is the record: a collector, a trace command or another device reads it, or receives it shipped; nothing reads the process's stderr for it.
+
 ### Shipping
 
 An event is written to stderr. With `LOG_SHIP` set it is also sent to that URL, as the same bytes: shipping changes no event and no key, so whatever reads a file reads what arrives.
@@ -222,7 +232,7 @@ A `page` span's start carries `host`, `path` (the pathname, no query), `nav` (`n
 
 ### Configuration
 
-Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`), `LOG_SERVICE` (`setLogService`), `LOG_SHIP` (`setLogShip`), `LOG_SHIP_TOKEN` (`setLogShipToken`). For every one of them **the environment wins over code**: a setter is the program's own default, and the operator's variable, read live, overrides it. Values are matched without regard to case (`LOG_LEVEL=DEBUG` is `debug`), an empty variable is unset, and an unknown value raises or panics. A confused program should scream.
+Environment variables, each with a setter for code: `LOG_FORMAT` (`setLogFormat`), `LOG_TIME` (`setLogTime`), `LOG_LEVEL` and `{SCOPE}_LOG_LEVEL` (`setLogLevel`), `LOG_SERVICE` (`setLogService`), `LOG_RECORD_LEVEL` (`setLogRecordLevel`), `LOG_RECORD_FILE` (`setLogRecordFile`), `LOG_SHIP` (`setLogShip`), `LOG_SHIP_TOKEN` (`setLogShipToken`). For every one of them **the environment wins over code**: a setter is the program's own default, and the operator's variable, read live, overrides it. Values are matched without regard to case (`LOG_LEVEL=DEBUG` is `debug`), an empty variable is unset, and an unknown value raises or panics. A confused program should scream.
 
 A malformed `traceparent` handed to `join` is warned about once per distinct value (bounded memory, as `warnOnce`); lines written through a joined logger outside any span carry no ids, as a process's lines outside its spans never do.
 
