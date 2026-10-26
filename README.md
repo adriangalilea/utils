@@ -146,7 +146,9 @@ A number is written as JavaScript writes it (ECMAScript's Number-to-String, whic
 
 `LOG_TIME=1|0` puts a dim local `HH:MM:SS` before human lines (default off). JSON always carries `time`.
 
-The human rendering's layout and colour are each library's business; its symbols are the table above. One rule it keeps everywhere: an error's stack is printed once. A span that fails with an error a span inside it already failed with (the same error, passed up) prints its message, not its stack again. JSON writes both: they are two facts.
+The human rendering's layout and palette are each library's business; its symbols are the table above.
+
+**Whether to colour is one rule, in every library and for everything it writes (the logger and its `cli` alike):** `FORCE_COLOR` set to anything but empty paints unless it is `0` or `false`; otherwise `NO_COLOR` set to anything but empty, or `TERM=dumb`, does not (an empty variable is an unset one); otherwise paint when the streams the text goes to are terminals (the logger writes stderr, so stderr; `cli` writes both, so both). Each library decides it in one function its logger and its `cli` both call, so `FORCE_COLOR=1 cmd | less -R` and `NO_COLOR=1 cmd` mean the same to a program's logs and to its help. One rule it keeps everywhere: an error's stack is printed once. A span that fails with an error a span inside it already failed with (the same error, passed up) prints its message, not its stack again. JSON writes both: they are two facts.
 
 **Reading a file is the viewer's job.** `logs` (go-utils, `go install github.com/adriangalilea/go-utils/cmd/logs@latest`) reads events from files or stdin and renders them: human at a terminal, and in a pipe the grep line
 

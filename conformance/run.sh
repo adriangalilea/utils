@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Runs the same sequence of events through all three libraries and proves their
+# Runs the same sequence of events through every library and proves their
 # streams are identical: every line one JSON event in the contract's shape (keys,
 # order, formats), and, with what differs every run replaced by stable tokens
-# (normalize.py), the same stream as expected.jsonl. Four runs per library:
+# (normalize.py), the same stream as expected.jsonl. Five runs per library:
 #
 #   events       the default: the sequence, with the events below info absent
 #   scope level  API_AUTH_LOG_LEVEL=debug opens the nested scope ["api","auth"]
@@ -11,6 +11,8 @@
 #                span
 #   ship         LOG_SHIP pointed at a collector on 127.0.0.1 (ship.py): what
 #                arrived is stderr byte for byte, over the contract's wire
+#   colour       human lines into a pipe under each FORCE_COLOR / NO_COLOR /
+#                TERM=dumb case: escapes exactly when the one rule says so
 #
 # By default each library is the published one its probe pins. LOCAL=<dir>
 # runs the checkouts in <dir> instead (<dir>/go-utils, <dir>/ts-utils built,
@@ -58,7 +60,30 @@ check() {
 	fi
 }
 
-# probe <lang> <command...>: the four runs, one result line.
+# colour <lang> <command...>: the one colour rule (README "Rendering"), with
+# stderr a pipe: human lines carry escapes exactly when FORCE_COLOR asks for
+# them, whatever NO_COLOR says, and never otherwise.
+colour() {
+	local lang=$1
+	shift
+	local case want painted bad=0
+	for case in "|no" "FORCE_COLOR=1|yes" "FORCE_COLOR=|no" "FORCE_COLOR=0|no" "FORCE_COLOR=false|no" \
+		"FORCE_COLOR=1 NO_COLOR=1|yes" "NO_COLOR=1|no" "TERM=dumb|no"; do
+		want=${case#*|}
+		# shellcheck disable=SC2086 # the case's assignments, word-split on purpose
+		env -u FORCE_COLOR -u NO_COLOR LOG_FORMAT=human LOG_SERVICE=probe ${case%|*} "$@" \
+			2>"$work/$lang-colour.err" >/dev/null
+		painted=no
+		grep -q $'\x1b\[' "$work/$lang-colour.err" && painted=yes
+		if [ "$painted" != "$want" ]; then
+			echo "${case%|*}: painted $painted, the rule says $want"
+			bad=1
+		fi
+	done
+	return $bad
+}
+
+# probe <lang> <command...>: the five runs, one result line.
 probe() {
 	local lang=$1
 	shift
@@ -68,8 +93,9 @@ probe() {
 			failed+=("$run")
 		fi
 	done
+	colour "$lang" "$@" >"$work/$lang-colour.why" 2>&1 || failed+=(colour)
 	if [ ${#failed[@]} -eq 0 ]; then
-		printf '%-6s PASS   events · scope level · traceparent · ship\n' "$lang"
+		printf '%-6s PASS   events · scope level · traceparent · ship · colour\n' "$lang"
 		return
 	fi
 	printf '%-6s FAIL   %s\n' "$lang" "${failed[*]}"
@@ -94,12 +120,19 @@ fi
 
 if command -v node >/dev/null && command -v npm >/dev/null; then
 	cp -R probes/ts "$work/ts-probe"
-	if [ -n "${LOCAL:-}" ]; then
-		(cd "$work/ts-probe" && npm install --silent --no-audit --no-fund "$LOCAL/ts-utils" >/dev/null 2>&1)
+	# The package, not the workspace root (named ts-utils, which the probe
+	# never imports: the published one ran in its place, silently).
+	local_ts=()
+	[ -n "${LOCAL:-}" ] && local_ts=("$LOCAL/ts-utils/packages/utils")
+	# --prefer-online, as uv's refresh below: npm's cached index would not know
+	# a version released minutes ago.
+	if (cd "$work/ts-probe" && npm install --prefer-online --no-audit --no-fund ${local_ts[@]+"${local_ts[@]}"} >"$work/ts-install.log" 2>&1); then
+		probe ts node "$work/ts-probe/probe.mjs"
 	else
-		(cd "$work/ts-probe" && npm install --silent --no-audit --no-fund >/dev/null 2>&1)
+		printf '%-6s FAIL   npm install\n' ts
+		sed 's/^/    /' "$work/ts-install.log" | tail -5
+		status=1
 	fi
-	probe ts node "$work/ts-probe/probe.mjs"
 else
 	printf '%-6s SKIP   node not installed\n' ts
 fi
@@ -107,7 +140,7 @@ fi
 if command -v uv >/dev/null; then
 	# The floor is the first release that ships; the refresh makes uv ask
 	# PyPI again instead of reusing what it resolved last time.
-	with=(--refresh-package adrian-utils --with "adrian-utils>=0.8.1")
+	with=(--refresh-package adrian-utils --with "adrian-utils>=0.9.2")
 	# Editable: uv keys a built path dependency on its pyproject.toml, so a
 	# plain --with would keep running the build from before a source edit.
 	[ -n "${LOCAL:-}" ] && with=(--with-editable "$LOCAL/py-utils")
